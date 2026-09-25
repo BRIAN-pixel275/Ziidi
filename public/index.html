@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#10b981">
+  <title>Ziidi Investment Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen">
+  <div class="auth-card">
+    <div id="loginPanel">
+      <h1>Ziidi</h1>
+      <p class="subtitle">Log in to your investment portfolio</p>
+      <form id="loginForm">
+        <div class="form-control">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" required autocomplete="email">
+        </div>
+        <div class="form-control">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" required autocomplete="current-password">
+        </div>
+        <button type="submit">Log In</button>
+      </form>
+      <div class="auth-switch">
+        <a href="#" id="forgotPassword">Forgot password?</a>
+      </div>
+      <div class="auth-switch">
+        No account? <a href="#" id="showSignup">Sign up</a>
+      </div>
+    </div>
+
+    <div id="signupPanel" style="display:none;">
+      <h1>Ziidi</h1>
+      <p class="subtitle">Create your account</p>
+      <form id="signupForm">
+        <div class="form-control">
+          <label for="signupEmail">Email</label>
+          <input type="email" id="signupEmail" required autocomplete="email">
+        </div>
+        <div class="form-control">
+          <label for="signupPassword">Password (6+ characters)</label>
+          <input type="password" id="signupPassword" required minlength="6" autocomplete="new-password">
+        </div>
+        <button type="submit">Sign Up</button>
+      </form>
+      <div class="auth-switch">
+        Already have an account? <a href="#" id="showLogin">Log in</a>
+      </div>
+    </div>
+
+    <div id="authError"></div>
+  </div>
+</div>
+
+<!-- MAIN APP (shown once logged in) -->
+<div id="appScreen" style="display:none;">
+  <div class="container">
+    <header style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <h1>Ziidi Investment Tracker</h1>
+        <p>Track your investment portfolio in real-time with live NSE prices</p>
+      </div>
+      <div class="user-bar">
+        <span id="userEmailLabel"></span>
+        <button id="logoutBtn" class="btn-secondary">Log Out</button>
+      </div>
+    </header>
+
+    <div id="alertBox" class="alert"></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(event, 'portfolio')">Portfolio</button>
+      <button class="tab-btn" onclick="switchTab(event, 'add-investment')">Add Investment</button>
+      <button class="tab-btn" onclick="switchTab(event, 'prices')">Live Prices</button>
+    </div>
+
+    <!-- PORTFOLIO TAB -->
+    <div id="portfolio" class="tab-content active">
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <div class="chart-container" id="chartContainer" style="display: none;">
+        <h3>Portfolio Distribution</h3>
+        <canvas id="portfolioChart"></canvas>
+      </div>
+
+      <h2 style="margin: 40px 0 20px 0; font-size: 20px;">Holdings by Stock</h2>
+      <table id="holdingsTable">
+        <thead>
+          <tr>
+            <th>Stock</th><th>Shares</th><th>Avg Cost (KES)</th><th>Current Price (KES)</th>
+            <th>Position Value (KES)</th><th>Total Invested (KES)</th><th>Gain/Loss</th><th>Return %</th>
+          </tr>
+        </thead>
+        <tbody id="holdingsBody"></tbody>
+      </table>
+
+      <h2 style="margin: 40px 0 20px 0; font-size: 20px;">All Transactions</h2>
+      <table id="transactionsTable">
+        <thead>
+          <tr>
+            <th>Date</th><th>Stock</th><th>Type</th><th>Amount (KES)</th>
+            <th>Shares</th><th>Price/Share (KES)</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="transactionsBody"></tbody>
+      </table>
+      <p class="updated-note" id="pricesUpdatedNote"></p>
+    </div>
+
+    <!-- ADD INVESTMENT TAB -->
+    <div id="add-investment" class="tab-content">
+      <div class="input-section">
+        <h3>Add New Investment</h3>
+        <form id="addInvestmentForm">
+          <div class="form-group">
+            <div class="form-control">
+              <label for="stock">Stock</label>
+              <select id="stock" required>
+                <option value="">Select a stock</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label for="investmentAmount">Amount (KES)</label>
+              <input type="number" id="investmentAmount" placeholder="e.g., 5000" min="0" step="0.01" required>
+            </div>
+            <div class="form-control">
+              <label for="sharePrice">Price per Share (KES)</label>
+              <input type="number" id="sharePrice" placeholder="e.g., 29.50" min="0" step="0.01" required>
+            </div>
+          </div>
+          <button type="submit" style="width: 100%; max-width: 300px;">Add Investment</button>
+        </form>
+      </div>
+
+      <h2 style="margin: 40px 0 20px 0; font-size: 20px;">Investment History</h2>
+      <table id="investmentHistoryTable">
+        <thead>
+          <tr><th>Date</th><th>Stock</th><th>Amount (KES)</th><th>Shares</th><th>Price/Share (KES)</th><th>Action</th></tr>
+        </thead>
+        <tbody id="investmentHistoryBody"></tbody>
+      </table>
+    </div>
+
+    <!-- LIVE PRICES TAB -->
+    <div id="prices" class="tab-content">
+      <div class="price-update-section">
+        <h3>NSE Ticker Prices</h3>
+        <div class="ticker-search-bar">
+          <input type="text" id="tickerSearch" placeholder="Search by symbol or company name...">
+          <button id="refreshPricesBtn" class="btn-secondary">Refresh Now</button>
+        </div>
+        <div class="price-grid" id="priceGrid"></div>
+        <p class="updated-note" id="pricesUpdatedNoteTab"></p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>&copy; 2026 Ziidi Investment Tracker. Manage your portfolio with confidence.</p>
+    <p>Created by Brian. All rights reserved.</p>
+    <p style="margin-top:6px;font-size:11px;">Prices are sourced from a public NSE price aggregator and may be delayed; not a substitute for a broker's live feed.</p>
+  </footer>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
