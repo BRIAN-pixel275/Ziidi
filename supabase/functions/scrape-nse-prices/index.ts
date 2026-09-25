@@ -16,6 +16,16 @@ import * as cheerio from "npm:cheerio@1.0.0-rc.12";
 const SOURCE_URL = "https://afx.kwayisi.org/nse/";
 const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
+// Browsers send a preflight OPTIONS request before any cross-origin call
+// that carries an Authorization header. Without these headers on every
+// response, the browser blocks the request before it even reaches this
+// code, which shows up client-side as "Failed to send a request to the
+// Edge Function" even though the function itself never ran.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret"
+};
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
@@ -99,6 +109,11 @@ async function scrapeAndStore() {
 }
 
 Deno.serve(async (req) => {
+  // Answer the browser's preflight check before doing anything else
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     const cronHeader = req.headers.get("x-cron-secret");
     const isCron = Boolean(CRON_SECRET) && cronHeader === CRON_SECRET;
@@ -111,7 +126,7 @@ Deno.serve(async (req) => {
       if (userError || !userData?.user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
-          headers: { "Content-Type": "application/json" }
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
@@ -124,7 +139,7 @@ Deno.serve(async (req) => {
       if (status?.last_run_at && Date.now() - new Date(status.last_run_at).getTime() < MIN_REFRESH_INTERVAL_MS) {
         return new Response(
           JSON.stringify({ error: "Prices were refreshed recently - please try again in a few minutes." }),
-          { status: 429, headers: { "Content-Type": "application/json" } }
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }
@@ -132,13 +147,13 @@ Deno.serve(async (req) => {
     const tickerCount = await scrapeAndStore();
     return new Response(JSON.stringify({ tickerCount }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });
