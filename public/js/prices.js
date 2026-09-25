@@ -1,27 +1,42 @@
-import { db, functions } from "./firebase-config.js";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
+import { supabase } from "./supabase-client.js";
 
-// In-memory cache of the latest scraped prices: { TICKER: { ticker, name, price, change, updatedAt } }
-let priceCache = {};
+let priceCache = {}; // { TICKER: { ticker, name, price, change, volume, updated_at } }
 let listeners = [];
+let channel = null;
 
 export function watchPrices(onUpdate) {
   listeners.push(onUpdate);
-  const q = query(collection(db, "stockPrices"), orderBy("ticker"));
-  return onSnapshot(q, (snap) => {
-    const next = {};
-    snap.forEach((doc) => {
-      next[doc.id] = doc.data();
+
+  // Initial load
+  supabase
+    .from("stock_prices")
+    .select("*")
+    .order("ticker")
+    .then(({ data, error }) => {
+      if (error) {
+        console.error("Failed to load stock prices", error);
+        return;
+      }
+      priceCache = Object.fromEntries((data || []).map((row) => [row.ticker, row]));
+      listeners.forEach((fn) => fn(priceCache));
     });
-    priceCache = next;
-    listeners.forEach((fn) => fn(priceCache));
-  });
+
+  // Realtime updates as the scraper writes new prices
+  channel = supabase
+    .channel("stock_prices-changes")
+    .on("postgres_changes", { event: "*", schema: "public", table: "stock_prices" }, (payload) => {
+      if (payload.eventType === "DELETE") {
+        delete priceCache[payload.old.ticker];
+      } else {
+        priceCache[payload.new.ticker] = payload.new;
+      }
+      listeners.forEach((fn) => fn(priceCache));
+    })
+    .subscribe();
+
+  return () => {
+    if (channel) supabase.removeChannel(channel);
+  };
 }
 
 export function getPriceCache() {
@@ -29,10 +44,9 @@ export function getPriceCache() {
 }
 
 export function getPrice(ticker) {
-  return priceCache[ticker] ? priceCache[ticker].price : 0;
+  return priceCache[ticker] ? Number(priceCache[ticker].price) : 0;
 }
 
-// Search tickers by symbol or company name, e.g. for an autocomplete box
 export function searchTickers(term) {
   const t = term.trim().toUpperCase();
   if (!t) return Object.values(priceCache).slice(0, 20);
@@ -41,20 +55,22 @@ export function searchTickers(term) {
   );
 }
 
-// Ask the Cloud Function to refresh prices right now, instead of waiting
-// for the next scheduled scrape. The function itself throttles repeated calls.
 export async function requestPriceRefresh() {
-  const refresh = httpsCallable(functions, "refreshPricesNow");
-  const result = await refresh();
-  return result.data;
+  const { data, error } = await supabase.functions.invoke("scrape-nse-prices");
+  if (error) {
+    // supabase-js wraps non-2xx responses in a FunctionsHttpError; try to
+    // surface the server's own message (e.g. the 5-minute throttle notice).
+    const message = (await error.context?.json?.().catch(() => null))?.error;
+    throw new Error(message || error.message || "Could not refresh prices right now");
+  }
+  return data;
 }
 
 export function mostRecentUpdate() {
   const all = Object.values(priceCache);
   if (all.length === 0) return null;
   return all.reduce((latest, s) => {
-    if (!s.updatedAt) return latest;
-    const t = s.updatedAt.toMillis ? s.updatedAt.toMillis() : 0;
+    const t = s.updated_at ? new Date(s.updated_at).getTime() : 0;
     return t > latest ? t : latest;
   }, 0);
 }

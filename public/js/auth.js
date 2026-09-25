@@ -1,34 +1,31 @@
-import { auth } from "./firebase-config.js";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut as fbSignOut,
-  onAuthStateChanged,
-  sendPasswordResetEmail
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { supabase } from "./supabase-client.js";
 
 export function watchAuthState(callback) {
-  return onAuthStateChanged(auth, callback);
+  supabase.auth.getSession().then(({ data }) => callback(data.session?.user ?? null));
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session?.user ?? null);
+  });
+  return () => sub.subscription.unsubscribe();
 }
 
 export async function signUp(email, password) {
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
-  return cred.user;
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data.user;
 }
 
 export async function signIn(email, password) {
-  const cred = await signInWithEmailAndPassword(auth, email, password);
-  return cred.user;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data.user;
 }
 
 export async function signOut() {
-  await fbSignOut(auth);
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
 }
 
 export async function resetPassword(email) {
-  await sendPasswordResetEmail(auth, email);
-}
-
-export function currentUser() {
-  return auth.currentUser;
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) throw error;
 }

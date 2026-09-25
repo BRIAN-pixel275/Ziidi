@@ -1,30 +1,50 @@
-import { db } from "./firebase-config.js";
-import {
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  query,
-  orderBy,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { supabase } from "./supabase-client.js";
 import { getPriceCache } from "./prices.js";
 
 let investments = [];
 let listeners = [];
-
-function investmentsRef(uid) {
-  return collection(db, "users", uid, "investments");
-}
+let channel = null;
 
 export function watchInvestments(uid, onUpdate) {
   listeners.push(onUpdate);
-  const q = query(investmentsRef(uid), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    investments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    listeners.forEach((fn) => fn(investments));
-  });
+
+  supabase
+    .from("investments")
+    .select("*")
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false })
+    .then(({ data, error }) => {
+      if (error) {
+        console.error("Failed to load investments", error);
+        return;
+      }
+      investments = data || [];
+      listeners.forEach((fn) => fn(investments));
+    });
+
+  channel = supabase
+    .channel(`investments-${uid}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "investments", filter: `user_id=eq.${uid}` },
+      () => {
+        // Simplest correct approach: re-fetch on any change for this user
+        supabase
+          .from("investments")
+          .select("*")
+          .eq("user_id", uid)
+          .order("created_at", { ascending: false })
+          .then(({ data }) => {
+            investments = data || [];
+            listeners.forEach((fn) => fn(investments));
+          });
+      }
+    )
+    .subscribe();
+
+  return () => {
+    if (channel) supabase.removeChannel(channel);
+  };
 }
 
 export function getInvestments() {
@@ -36,22 +56,23 @@ export async function addInvestment(uid, { stock, amount, price }) {
     throw new Error("Please fill in all fields with valid values");
   }
   const shares = parseFloat((amount / price).toFixed(4));
-  await addDoc(investmentsRef(uid), {
+  const { error } = await supabase.from("investments").insert({
+    user_id: uid,
     stock,
     amount: parseFloat(amount.toFixed(2)),
     price: parseFloat(price.toFixed(2)),
     shares,
-    date: new Date().toLocaleDateString("en-GB"),
-    createdAt: serverTimestamp()
+    txn_date: new Date().toISOString().slice(0, 10)
   });
+  if (error) throw error;
   return shares;
 }
 
 export async function deleteInvestment(uid, investmentId) {
-  await deleteDoc(doc(db, "users", uid, "investments", investmentId));
+  const { error } = await supabase.from("investments").delete().eq("id", investmentId).eq("user_id", uid);
+  if (error) throw error;
 }
 
-// Same aggregation logic as the original app, but priced from live Firestore data
 export function getPortfolioSummary() {
   const prices = getPriceCache();
   let totalInvested = 0;
@@ -59,17 +80,19 @@ export function getPortfolioSummary() {
   const holdings = {};
 
   investments.forEach((inv) => {
-    totalInvested += inv.amount;
+    const amount = Number(inv.amount);
+    const shares = Number(inv.shares);
+    totalInvested += amount;
     if (!holdings[inv.stock]) {
       holdings[inv.stock] = { shares: 0, totalInvested: 0, transactions: [] };
     }
-    holdings[inv.stock].shares += inv.shares;
-    holdings[inv.stock].totalInvested += inv.amount;
+    holdings[inv.stock].shares += shares;
+    holdings[inv.stock].totalInvested += amount;
     holdings[inv.stock].transactions.push(inv);
   });
 
   for (const stock in holdings) {
-    const currentPrice = prices[stock] ? prices[stock].price : 0;
+    const currentPrice = prices[stock] ? Number(prices[stock].price) : 0;
     const h = holdings[stock];
     h.currentPrice = currentPrice;
     h.currentValue = h.shares * currentPrice;

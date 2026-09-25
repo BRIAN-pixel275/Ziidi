@@ -3,6 +3,12 @@ import { getPriceCache, mostRecentUpdate, searchTickers } from "./prices.js";
 
 let chart = null;
 
+function formatDate(isoDate) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate + (isoDate.length === 10 ? "T00:00:00" : ""));
+  return d.toLocaleDateString("en-GB");
+}
+
 export function showAlert(message, type = "success") {
   const alertBox = document.getElementById("alertBox");
   alertBox.className = `alert show alert-${type}`;
@@ -87,12 +93,12 @@ function renderTransactions() {
   investments.forEach((inv) => {
     body.innerHTML += `
       <tr>
-        <td>${inv.date}</td>
+        <td>${formatDate(inv.txn_date)}</td>
         <td data-label="Stock"><strong>${inv.stock}</strong></td>
         <td data-label="Type"><span class="badge badge-success">BUY</span></td>
-        <td data-label="Amount (KES)"><span class="number">KES ${inv.amount.toFixed(2)}</span></td>
-        <td data-label="Shares"><span class="number">${inv.shares.toFixed(4)}</span></td>
-        <td data-label="Price/Share (KES)"><span class="number">KES ${inv.price.toFixed(2)}</span></td>
+        <td data-label="Amount (KES)"><span class="number">KES ${Number(inv.amount).toFixed(2)}</span></td>
+        <td data-label="Shares"><span class="number">${Number(inv.shares).toFixed(4)}</span></td>
+        <td data-label="Price/Share (KES)"><span class="number">KES ${Number(inv.price).toFixed(2)}</span></td>
         <td data-label="Action"><button class="btn-danger" data-delete-id="${inv.id}">Delete</button></td>
       </tr>`;
   });
@@ -110,11 +116,11 @@ export function renderInvestmentHistory() {
   investments.forEach((inv) => {
     body.innerHTML += `
       <tr>
-        <td>${inv.date}</td>
+        <td>${formatDate(inv.txn_date)}</td>
         <td><strong>${inv.stock}</strong></td>
-        <td><span class="number">KES ${inv.amount.toFixed(2)}</span></td>
-        <td><span class="number">${inv.shares.toFixed(4)}</span></td>
-        <td><span class="number">KES ${inv.price.toFixed(2)}</span></td>
+        <td><span class="number">KES ${Number(inv.amount).toFixed(2)}</span></td>
+        <td><span class="number">${Number(inv.shares).toFixed(4)}</span></td>
+        <td><span class="number">KES ${Number(inv.price).toFixed(2)}</span></td>
         <td><button class="btn-danger" data-delete-id="${inv.id}">Delete</button></td>
       </tr>`;
   });
@@ -177,8 +183,6 @@ function renderLastUpdated() {
   });
 }
 
-// --- Live price browser / ticker search (Prices tab) ---
-
 export function renderPriceBrowser(term = "") {
   const grid = document.getElementById("priceGrid");
   const results = searchTickers(term);
@@ -188,19 +192,19 @@ export function renderPriceBrowser(term = "") {
     return;
   }
   results.forEach((s) => {
-    const changeClass = (s.change || 0) >= 0 ? "positive" : "negative";
+    const change = Number(s.change || 0);
+    const changeClass = change >= 0 ? "positive" : "negative";
     grid.innerHTML += `
       <div class="price-item">
         <label>${s.ticker} <span style="font-weight:400;color:var(--text-secondary);">${s.name || ""}</span></label>
         <div class="stat-value" style="font-size:16px;">KES ${Number(s.price || 0).toFixed(2)}
-          <span class="${changeClass} number" style="font-size:12px;">${s.change >= 0 ? "+" : ""}${s.change ?? 0}</span>
+          <span class="${changeClass} number" style="font-size:12px;">${change >= 0 ? "+" : ""}${change}</span>
         </div>
       </div>`;
   });
   renderLastUpdated();
 }
 
-// Populates the ticker <select> used on the Add Investment tab from live data
 export function populateStockSelect() {
   const select = document.getElementById("stock");
   const current = select.value;

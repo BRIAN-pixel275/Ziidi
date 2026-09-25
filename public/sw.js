@@ -8,7 +8,7 @@ const APP_SHELL = [
   "./js/portfolio.js",
   "./js/prices.js",
   "./js/ui.js",
-  "./js/firebase-config.js",
+  "./js/supabase-client.js",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"

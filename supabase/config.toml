@@ -1,0 +1,4 @@
+project_id = "ziidi"
+
+[functions.scrape-nse-prices]
+verify_jwt = false

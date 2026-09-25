@@ -14,11 +14,10 @@ let unsubInvestments = null;
 let unsubPrices = null;
 let currentUid = null;
 
-// Expose tab switching to inline onclick handlers in index.html
 window.switchTab = switchTab;
 
 function showApp(user) {
-  currentUid = user.uid;
+  currentUid = user.id;
   document.getElementById("authScreen").style.display = "none";
   document.getElementById("appScreen").style.display = "block";
   document.getElementById("userEmailLabel").textContent = user.email;
@@ -67,6 +66,9 @@ document.getElementById("signupForm").addEventListener("submit", async (e) => {
   const password = document.getElementById("signupPassword").value;
   try {
     await signUp(email, password);
+    document.getElementById("authError").style.color = "var(--success)";
+    document.getElementById("authError").textContent =
+      "Account created. Check your email if confirmation is required, then log in.";
   } catch (err) {
     showAuthError(err);
   }
@@ -103,19 +105,17 @@ document.getElementById("forgotPassword").addEventListener("click", async (e) =>
 function showAuthError(err) {
   const box = document.getElementById("authError");
   box.style.color = "var(--danger)";
-  box.textContent = friendlyAuthError(err.code) || err.message;
+  box.textContent = friendlyAuthError(err.message) || err.message;
 }
 
-function friendlyAuthError(code) {
+function friendlyAuthError(message) {
   const map = {
-    "auth/email-already-in-use": "That email is already registered — try logging in instead.",
-    "auth/invalid-email": "That email address looks invalid.",
-    "auth/weak-password": "Password should be at least 6 characters.",
-    "auth/invalid-credential": "Incorrect email or password.",
-    "auth/user-not-found": "No account found with that email.",
-    "auth/wrong-password": "Incorrect email or password."
+    "User already registered": "That email is already registered — try logging in instead.",
+    "Invalid login credentials": "Incorrect email or password.",
+    "Password should be at least 6 characters": "Password should be at least 6 characters.",
+    "Unable to validate email address: invalid format": "That email address looks invalid."
   };
-  return map[code];
+  return map[message];
 }
 
 document.getElementById("logoutBtn").addEventListener("click", () => signOut());
@@ -136,7 +136,6 @@ document.getElementById("addInvestmentForm").addEventListener("submit", async (e
   }
 });
 
-// Delegated delete handling for both the portfolio and history tables
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-delete-id]");
   if (!btn) return;

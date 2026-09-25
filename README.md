@@ -1,103 +1,107 @@
-# Ziidi Investment Tracker v2 — Cloud Edition
+# Ziidi Investment Tracker — Supabase Edition
 
-This is a rebuild of Ziidi with:
-
-- **Login/signup** (Firebase Authentication) — each user has their own private portfolio
-- **Cloud storage** (Firestore) instead of `localStorage` — your data follows you across devices/browsers
-- **Live-ish NSE prices** for all ~65 listed NSE tickers, refreshed automatically a few times a day by a scheduled Cloud Function that scrapes a public price page, plus a manual "Refresh Now" button
-- **Dynamic ticker search** in the Add Investment and Live Prices tabs — no longer hardcoded to 3 stocks
-- Restructured into separate files: `index.html`, `css/styles.css`, and `js/{firebase-config,auth,portfolio,prices,ui,app}.js`, plus a `functions/` folder for the backend scraper
+Same feature set as the Firebase version (login, cloud-stored portfolios, live NSE
+prices for all listed tickers, dynamic ticker search) but built on **Supabase**
+instead — Postgres + Auth + Edge Functions, all on Supabase's free tier with
+**no credit card required**.
 
 ## Project layout
 
 ```
-ziidi-v2/
-  public/                 <- deployed as the website (Firebase Hosting)
-    index.html
+ziidi-supabase/
+  public/                          <- static site, host anywhere (Supabase Hosting isn't a thing;
+    index.html                        use Netlify/Vercel/GitHub Pages, see step 5)
     manifest.json
     sw.js
     css/styles.css
     js/
-      firebase-config.js  <- put your Firebase project keys here
+      supabase-client.js           <- put your Supabase project URL + anon key here
       auth.js
       portfolio.js
       prices.js
       ui.js
       app.js
-  functions/               <- Cloud Functions (the scraper + refresh endpoint)
-    index.js
-    package.json
-  firestore.rules
-  firebase.json
+  supabase/
+    config.toml
+    migrations/0001_init.sql       <- database schema + Row Level Security policies
+    functions/scrape-nse-prices/   <- Edge Function: scrapes NSE prices
+    post-deploy-cron.sql           <- run once after deploying, to schedule the scraper
 ```
 
-## 1. Create a Firebase project
+## 1. Create a Supabase project
 
-1. Go to [console.firebase.google.com](https://console.firebase.google.com) and create a new project.
-2. **Authentication** → Sign-in method → enable **Email/Password**.
-3. **Firestore Database** → create a database (start in production mode — the rules file below locks it down properly).
-4. **Project Settings** → General → "Your apps" → add a **Web app**. Copy the `firebaseConfig` object it gives you.
-5. Upgrade the project to the **Blaze (pay-as-you-go) plan**. This is required for Cloud Functions that make outbound network calls (the scraper) and for scheduled functions. For a personal app scraping a page 4x/day, you should stay comfortably within the free-tier usage included in Blaze — but Google requires the plan to be enabled either way.
+1. Go to [supabase.com](https://supabase.com) → New project. Pick a region close to Kenya if offered (e.g. an EU region). No credit card needed for the free tier.
+2. Once it's provisioned, go to **Project Settings → API** and copy the **Project URL** and the **anon/public key**.
 
 ## 2. Configure the frontend
 
-Open `public/js/firebase-config.js` and replace the placeholder values with the `firebaseConfig` object from step 1.4 above.
+Open `public/js/supabase-client.js` and replace `SUPABASE_URL` and `SUPABASE_ANON_KEY` with the values from step 1.2.
 
-## 3. Install the Firebase CLI and log in
-
-```bash
-npm install -g firebase-tools
-firebase login
-```
-
-From inside the `ziidi-v2` folder:
+## 3. Install the Supabase CLI and log in
 
 ```bash
-firebase use --add
-# select the project you created, give it an alias like "default"
+npm install -g supabase
+supabase login
 ```
 
-## 4. Install Cloud Functions dependencies
+From inside the `ziidi-supabase` folder:
 
 ```bash
-cd functions
-npm install
-cd ..
+supabase link --project-ref YOUR-PROJECT-REF
 ```
 
-## 5. Deploy
+(Your project ref is the subdomain in your project URL, e.g. `abcdefgh` from `https://abcdefgh.supabase.co`.)
+
+## 4. Push the database schema and deploy the Edge Function
 
 ```bash
-firebase deploy
+supabase db push
+supabase functions deploy scrape-nse-prices
 ```
 
-This deploys Hosting (the frontend), Firestore security rules, and the two Cloud Functions:
-- `scrapeNsePrices` — runs on a schedule (currently 7am, 9am, 11am, 1pm East Africa Time, weekdays) and writes to the `stockPrices` collection
-- `refreshPricesNow` — a callable function the "Refresh Now" button in the app triggers, throttled to once every 5 minutes
+Then set a secret the function uses to authenticate scheduled calls from `pg_cron`:
 
-After deploying, the CLI prints your live Hosting URL.
+```bash
+supabase secrets set CRON_SECRET=some-long-random-string-you-make-up
+```
+
+## 5. Schedule the scraper
+
+Open the **SQL Editor** in your Supabase dashboard, open `supabase/post-deploy-cron.sql` from this project, fill in:
+- Your real project URL (from step 1.2)
+- The exact same `CRON_SECRET` value you set in step 4
+
+...then run it. This enables `pg_cron` + `pg_net` and schedules the scraper for 7am/9am/11am/1pm East Africa Time on weekdays.
+
+To see it running later: `select * from cron.job_run_details order by start_time desc limit 5;` in the SQL Editor.
 
 ## 6. Seed prices immediately (optional)
 
-The scheduled scraper won't run until its next scheduled time. To populate prices right away after your first deploy, either:
-- Wait for the next scheduled run, or
-- Log into the app and click **"Refresh Now"** on the Live Prices tab — this calls `refreshPricesNow` directly.
+The scheduler won't fire until its next slot. To get prices right away, either wait, or log into the app once deployed and click **"Refresh Now"** on the Live Prices tab.
+
+## 7. Host the frontend
+
+`public/` is a plain static site — deploy it anywhere:
+- **Netlify / Vercel**: drag-and-drop the `public` folder, or connect your GitHub repo and set the publish directory to `public`.
+- **GitHub Pages**: push `public/`'s contents to a `gh-pages` branch (or use a GitHub Action).
+
+Unlike Firebase, Supabase doesn't host your static frontend — it's a backend-as-a-service, so pick any static host for `public/`.
 
 ## Important notes and limitations
 
-- **Price source**: The scraper reads a free, public NSE price-aggregator page (`afx.kwayisi.org/nse`) since there's no official free NSE Kenya API. This is inherently a bit fragile — if that site changes its HTML structure, `parseNsePrices()` in `functions/index.js` will need updating (it currently throws a loud error and refuses to overwrite good data if it parses fewer than 10 tickers, so you'll notice if it breaks rather than silently corrupting prices).
-- **Not real-time**: Prices refresh a few times a day, matching how NSE data realistically updates, not tick-by-tick. Treat this as informational, not a trading feed.
-- **Scraping caveat**: Automated scraping of a third-party site sits in a legal/ToS gray area even when the data itself is public. This is fine for personal/portfolio-tracking use; if you ever turn this into a product for other people, look into a licensed market-data provider instead.
-- **Security**: Firestore rules (`firestore.rules`) ensure each user can only read/write their own `users/{uid}/investments` — no user can see another user's portfolio. The `stockPrices` collection is read-only from the client; only the Cloud Functions (via the Admin SDK) can write to it.
-- **Still no sell transactions**: Like the original, this only tracks buys. Average cost accounting for partial sells is a good next feature to add if you want to keep iterating.
+- **Price source**: same caveat as before — this scrapes a free public NSE aggregator page (`afx.kwayisi.org/nse`) since there's no official free NSE Kenya API. If that page's HTML structure changes, `scrape-nse-prices/index.ts`'s `parseNsePrices()` will need updating. It refuses to overwrite existing prices if it parses fewer than 10 tickers, so a broken scrape fails loudly instead of corrupting data.
+- **Not real-time**: prices refresh a few times a day, not tick-by-tick.
+- **Email confirmation**: by default, Supabase requires users to confirm their email before they can log in. You can turn this off in Authentication → Providers → Email → "Confirm email" if you want frictionless signup for a personal app.
+- **Security**: Row Level Security (in `migrations/0001_init.sql`) ensures each user can only see and modify their own `investments` rows. `stock_prices` is read-only to any authenticated client — only the Edge Function (using the service_role key) can write to it.
+- **Still no sell transactions**: like the original app, this only tracks buys.
 
-## Local testing before deploying
+## Local testing
 
-You can run the frontend locally against your real Firebase project (no separate local backend needed, since Auth/Firestore/Functions all just talk to the cloud):
+You can serve the frontend locally against your real Supabase project:
 
 ```bash
 cd public
 python -m http.server 8000
 ```
 
-Then visit `http://localhost:8000`. You can also use the Firebase Emulator Suite (`firebase emulators:start`) if you want to test without touching production data.
+Then visit `http://localhost:8000`. To test the Edge Function locally before deploying: `supabase functions serve scrape-nse-prices`.
