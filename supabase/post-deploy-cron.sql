@@ -8,8 +8,8 @@ create extension if not exists pg_net;
 -- Store your project URL and the SAME secret you set as the
 -- scrape-nse-prices function's CRON_SECRET env var, so pg_cron can
 -- authenticate its calls to the function.
-select vault.create_secret('https://YOUR-PROJECT-REF.supabase.co', 'project_url');
-select vault.create_secret('YOUR_CRON_SECRET_VALUE', 'cron_secret');
+select vault.create_secret('https://gaikuenmrtudqqdlwwdb.supabase.co', 'project_url');
+select vault.create_secret('x7k2p9qL3mN8vR5tY1wZ4aB6cD0eF2gH', 'cron_secret');
 
 -- Runs at 7am, 9am, 11am and 1pm East Africa Time on weekdays,
 -- roughly covering the NSE trading session.
