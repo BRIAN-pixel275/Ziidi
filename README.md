@@ -105,3 +105,8 @@ python -m http.server 8000
 ```
 
 Then visit `http://localhost:8000`. To test the Edge Function locally before deploying: `supabase functions serve scrape-nse-prices`.
+
+
+Build by :
+
+Brian 
